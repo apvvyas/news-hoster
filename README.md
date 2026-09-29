@@ -1,73 +1,143 @@
-# news-hoster
+# News Hoster
 
-Collects news from RSS feeds of different websites, restructures each story into
-our own format (new headline, summary, key points, category, tags) and publishes
-it as a static website with its own RSS feed.
+Collects news from RSS feeds (English and Hindi), restructures every story with
+**Sarvam AI** into our own bilingual copy with SEO metadata, lets editors review it
+in a **WordPress-style admin**, and serves it to our public websites through a
+read-only **content API**.
 
 ```
- RSS feeds ──► fetch ──► dedupe ──► restructure ──► static site (HTML + feed.xml)
- (feeds.toml)   │          │         (Claude or       public/
-                ▼          ▼          extractive)
-             SQLite: data/news.db (items, articles, feed ETags)
+ RSS feeds ─► fetch ─► dedupe ─► detect language ─► Sarvam rewrite (EN + HI, SEO)
+                                                         │
+                         PostgreSQL ◄────────────────────┘
+                             │
+      ┌──────────────────────┼──────────────────────────┐
+  Admin (React)        Admin API (JWT)         Public API (per-site key)
+  apps/admin           /api/admin/*            /api/public/*  ◄── 5 React websites
+                                                                  (packages/sdk)
 ```
 
-## Quick start
+| Path | What it is |
+|---|---|
+| `apps/api` | NestJS 12 API: ingestion pipeline, admin API, public API (PostgreSQL + TypeORM) |
+| `apps/admin` | React + Vite admin panel styled after wp-admin |
+| `packages/sdk` | Typed client (`createNewsClient`, `createAdminClient`) shared by the admin and the websites |
+
+## Features
+
+- **Ingestion**: RSS/Atom feeds with per-feed intervals and conditional GET (ETag /
+  Last-Modified). Tracking parameters are stripped, the same headline from two outlets
+  is kept once, and Hindi vs. English is detected per story (or pinned per feed).
+- **Restructuring with Sarvam** (`sarvam-105b`, strict JSON schema): every story is
+  rewritten, not translated literally, into each target language (English + Hindi by
+  default). Sarvam also writes an SEO title, meta description and focus keyphrase,
+  picks a category and adds tags. The prompt forbids adding facts that aren't in the
+  source. Without a Sarvam key an extractive fallback cleans up the feed text.
+- **WordPress-style admin**:
+  - A Posts list with All / Published / Drafts / Rejected / Trash, bulk and row actions,
+    search and a category filter.
+  - A two-column editor with a Publish box, Categories, Tags, Featured image and Source
+    (the original feed text, for fact-checking).
+- **SEO**: a Yoast-style box per language version, with a Google snippet preview,
+  keyphrase and length checks, noindex and a canonical URL. The public API returns ready
+  `seo` fields and a sitemap.
+- **Revisions**: every change to a language version (pipeline, manual edit, applied
+  suggestion, restore) is saved and can be viewed and restored.
+- **Editorial chat per version**: editors ask Sarvam for changes to one language version
+  ("शीर्षक छोटा करें", "make it more formal", "improve SEO"). Sarvam replies with a full
+  proposed version, shown as a diff, that can be applied with one click (saved as a revision).
+- **Multi-site**: each website has its own API key (stored hashed, shown once), its
+  languages and its categories. Keys can be rotated.
+- **Roles**: *admin* manages everything; *editor* manages posts, feeds and categories.
+
+## Quick start (local)
+
+Requirements: Node 22.13+, and PostgreSQL 16 (Docker works).
 
 ```bash
-pip install -e '.[dev]'
-export ANTHROPIC_API_KEY=...        # optional – enables Claude rewriting
-news-hoster run                     # fetch + restructure + build
-news-hoster serve                   # preview at http://localhost:8000
+docker compose up -d                 # PostgreSQL on :5432 (+ a news_hoster_test DB)
+npm ci
+cp apps/api/.env.example apps/api/.env   # set ADMIN_EMAIL / ADMIN_PASSWORD, SARVAM_API_KEY
+npm run build -w packages/sdk
+npm run dev:api                      # http://localhost:3000/api  (docs: /api/docs)
+npm run dev:admin                    # http://localhost:5173  (proxies /api to :3000)
 ```
 
-Individual steps: `news-hoster fetch`, `news-hoster restructure [--limit N]`,
-`news-hoster build`, `news-hoster stats`. Use `-c path/to/feeds.toml` for another config.
+Migrations run automatically on API start. The first admin account is created from
+`ADMIN_EMAIL` / `ADMIN_PASSWORD` when the users table is empty. Ten starter categories
+with English and Hindi names are seeded.
 
-## Configuration
+Then in the admin: **Feeds → Add New Feed**, **Dashboard → Run now**, review drafts under
+**Posts**, and create a key for each website under **Sites**.
 
-Everything lives in [`feeds.toml`](feeds.toml): site title/URL, the list of feeds
-(`name`, `url`, `category` hint), and the restructuring engine:
+### Configuration (`apps/api/.env`)
 
-| engine       | what it does |
-|--------------|--------------|
-| `auto`       | Claude if `ANTHROPIC_API_KEY` is set, otherwise extractive (default) |
-| `claude`     | Rewrites each story in original wording with the Claude API (`claude-opus-5-5`, low effort, JSON-schema structured output). Also re-classifies into your category list. |
-| `extractive` | No LLM: cleans the feed text, uses the first sentences as summary and the rest as key points. |
+See [`apps/api/.env.example`](apps/api/.env.example). The important ones:
 
-## How it works
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `JWT_SECRET` | Required in production; a long random string |
+| `SARVAM_API_KEY` | Enables Sarvam restructuring and the editorial assistant |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | First admin account (only when no users exist) |
+| `CORS_ORIGINS` | Comma-separated origins of the admin and websites |
+| `PIPELINE_INTERVAL_MINUTES` | Fetch + restructure schedule (`0` = manual only) |
 
-- **Fetch** (`news_hoster/fetcher.py`) – `feedparser` with ETag/Last-Modified so
-  unchanged feeds cost nothing. One failing feed never stops the others.
-- **Dedupe** (`news_hoster/storage.py`) – URLs are canonicalised (tracking params
-  stripped); the same headline arriving from a second source is stored as a
-  `duplicate` and not published twice.
-- **Restructure** (`news_hoster/restructure.py`) – only uses what the publisher put
-  in its feed; the prompt forbids adding facts and treats story text as data, not
-  instructions. Failures are retried up to 3 times; rate limits / outages stop the
-  run and leave stories pending for next time.
-- **Build** (`news_hoster/site.py`, `news_hoster/templates/`) – index, one page per
-  category and per article, plus `feed.xml`. Every article credits and links to the
-  original source.
+Pipeline behaviour (engine, target languages, auto-publish, batch size) is edited in
+**Settings** in the admin.
+
+## Using the API from a website
+
+```ts
+import { createNewsClient } from '@news-hoster/sdk'
+
+const news = createNewsClient({ baseUrl: 'https://api.example.com', apiKey: import.meta.env.VITE_SITE_KEY })
+
+const site = await news.site()                                   // name, languages, localized categories
+const page = await news.articles({ category: 'sports', lang: 'hi', page: 1, limit: 12 })
+const story = await news.article('otters-win', 'hi')             // + body, related, seo
+const urls = await news.sitemap()                                // for sitemap.xml
+```
+
+Every article includes `seo.title`, `seo.description`, `seo.canonicalUrl` and
+`seo.noindex` for the page `<head>`, plus `source` for attribution. A site only receives
+**published** articles in its categories and languages. The site key identifies the
+site and is visible in browser code, so treat it as public. The API it unlocks is
+read-only and serves only published content.
+
+Full reference: Swagger UI at `/api/docs`.
+
+### Live demo build
+
+`npm run build:demo -w apps/admin` builds the admin into `apps/admin/dist-demo` with an
+in-browser sample API (fictional bilingual stories, simulated Sarvam replies, data kept in
+the viewer's browser). It needs no server and is useful for showing the admin to people.
+
+## Development
+
+```bash
+npm test                          # API unit + e2e tests (e2e needs PostgreSQL, see below)
+npm run lint                      # API lint, admin + SDK typecheck
+npm run migration:generate -w apps/api -- src/database/migrations/Name   # after entity changes
+```
+
+- E2E tests use `TEST_DATABASE_URL` (default
+  `postgres://news:news@localhost:5432/news_hoster_test`) and **wipe that database's
+  schema** on each run. They fake Sarvam and serve fixture feeds from a local HTTP
+  server, so they need no network access.
+- New migrations must be registered in `apps/api/src/database/migrations/index.ts`
+  (ESM builds cannot glob-load them). CI fails if entities and migrations drift.
+- Use npm 11 (`npx npm@11 install <pkg>`) when adding dependencies. npm 10 crashes
+  resolving this workspace's peer dependencies (`npm ci` is fine).
 
 ## Deployment
 
-`.github/workflows/publish.yml` runs hourly on GitHub Actions and deploys to GitHub
-Pages (setup steps are in the file header). The database is carried between runs
-with the Actions cache. Any static host (Netlify, S3, nginx) works too – just serve
-`public/`.
+The API is a long-running Node.js process (it schedules feed fetching) that needs
+PostgreSQL. The admin and the websites are static builds (`npm run build -w apps/admin`
+→ `apps/admin/dist`) that any web host can serve. `apps/admin/public/.htaccess` adds
+the single-page-app fallback for Apache/LiteSpeed.
 
-## Legal note
+## Content & legal
 
-Republishing other sites' content is subject to copyright and each site's terms.
-This project is designed to publish **short, rewritten summaries with attribution
-and a link back**, not to copy full articles. Check the terms of every feed you add,
-and prefer feeds whose publishers permit this kind of use. Article images are
-hot-linked from the source; remove `image_url` from the templates if a publisher
-does not allow that.
-
-## Tests
-
-```bash
-pytest -q
-```
-Tests use a local fixture feed and a fake Claude client, so they need no network or API key.
+Stories are rewritten from what publishers put in their RSS feeds and always credit and
+link to the source. Check each feed's terms before adding it. Images are loaded from the
+source URLs.

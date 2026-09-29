@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Mirror</title><link>https://mirror.example/</link><description>x</description>
+  <item>
+    <title>Local Team Wins Championship!</title>
+    <link>https://mirror.example/sport/otters</link>
+    <pubDate>Sun, 27 Sep 2026 19:00:00 GMT</pubDate>
+    <description>Same story, different outlet.</description>
+  </item>
+</channel></rss>
