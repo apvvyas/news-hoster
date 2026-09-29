@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }} · {{ site.title }}{% endblock %}
+{% block content %}
+<h1 class="section">{{ heading }}</h1>
+{% if not articles %}<p>No stories yet — run <code>news-hoster run</code>.</p>{% endif %}
+<div class="grid">
+{% for a in articles %}
+  <div class="card">
+    {% if a.image_url %}<img src="{{ a.image_url }}" alt="" loading="lazy" onerror="this.remove()">{% endif %}
+    <div class="body">
+      <div class="meta"><span class="cat">{{ a.category }}</span> · {{ a.source }} · <time datetime="{{ a.published|isodate }}">{{ a.published|date }}</time></div>
+      <h2><a href="{{ root }}article/{{ a.slug }}.html">{{ a.headline }}</a></h2>
+      <p>{{ a.summary }}</p>
+    </div>
+  </div>
+{% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ site.title }}{% endblock %}</title>
+  <meta name="description" content="{% block description %}{{ site.description }}{% endblock %}">
+  <link rel="stylesheet" href="{{ root }}static/style.css">
+  <link rel="alternate" type="application/rss+xml" title="{{ site.title }}" href="{{ root }}feed.xml">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="{{ root }}index.html">{{ site.title }}</a>
+      <p>{{ site.description }}</p>
+      <nav>
+        <a href="{{ root }}index.html">Latest</a>
+        {% for c in nav %}<a href="{{ root }}category/{{ c|slug }}.html">{{ c }}</a>{% endfor %}
+      </nav>
+    </div>
+  </header>
+  <main class="wrap">{% block content %}{% endblock %}</main>
+  <footer>
+    <div class="wrap">
+      Stories are summarised from publishers' public RSS feeds; every article links to its original source.
+      Updated {{ generated|date }}.
+    </div>
+  </footer>
+</body>
+</html>
