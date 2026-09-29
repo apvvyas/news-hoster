@@ -2,6 +2,7 @@ import { LANGUAGES, type Feed, type FeedInput } from '@news-hoster/sdk'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../api'
+import { useConfirm } from '../confirm-context'
 import { Field, Modal, Notice, PageHeader, Spinner } from '../components/ui'
 import { errorMessage, langName, timeAgo } from '../lib/format'
 
@@ -9,6 +10,7 @@ const BLANK: FeedInput = { name: '', url: '', language: 'auto', defaultCategoryI
 
 export function FeedsPage() {
   const qc = useQueryClient()
+  const confirm = useConfirm()
   const feeds = useQuery({ queryKey: ['feeds'], queryFn: api.feeds.list })
   const categories = useQuery({ queryKey: ['categories'], queryFn: api.categories.list })
   const [editing, setEditing] = useState<{ id?: string; form: FeedInput } | null>(null)
@@ -123,7 +125,14 @@ export function FeedsPage() {
                     </button>
                     <button
                       className="button-link danger"
-                      onClick={() => confirm(`Delete “${f.name}” and all its collected stories? Published articles stay.`) && remove.mutate(f.id)}
+                      onClick={async () =>
+                        (await confirm({
+                          title: `Delete “${f.name}”?`,
+                          message: 'Its collected stories are removed from the queue. Published articles stay.',
+                          confirmLabel: 'Delete feed',
+                          danger: true,
+                        })) && remove.mutate(f.id)
+                      }
                     >
                       Delete
                     </button>

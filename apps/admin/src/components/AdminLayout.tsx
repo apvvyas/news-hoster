@@ -77,6 +77,22 @@ export function AdminLayout() {
         ))}
       </nav>
       <main className="wpcontent">
+        {__DEMO__ && (
+          <div className="demo-banner" role="note">
+            <span>
+              <strong>Live demo</strong> — the real admin app running on sample data in your browser. Sarvam replies are simulated; nothing is published.
+            </span>
+            <button
+              onClick={async () => {
+                const { resetDemo } = await import('../demo/mock-api')
+                resetDemo()
+                window.location.reload()
+              }}
+            >
+              Reset demo data
+            </button>
+          </div>
+        )}
         <Outlet />
       </main>
     </>

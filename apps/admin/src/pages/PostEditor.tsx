@@ -331,14 +331,23 @@ function Editor({ id, server }: { id: string; server: Article }) {
           <Postbox title="Featured image">
             <div className="featured-image">
               {meta.imageUrl && <img src={meta.imageUrl} alt="" onError={(e) => (e.currentTarget.style.display = 'none')} />}
-              <input
-                type="url"
-                value={meta.imageUrl}
-                onChange={(e) => setM({ imageUrl: e.target.value })}
-                placeholder="https://… image URL"
-                aria-label="Featured image URL"
-                style={{ width: '100%' }}
-              />
+              {meta.imageUrl.startsWith('data:') ? (
+                <div className="inline">
+                  <span className="muted">Embedded sample image</span>
+                  <button className="button-link danger" onClick={() => setM({ imageUrl: '' })}>
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <input
+                  type="url"
+                  value={meta.imageUrl}
+                  onChange={(e) => setM({ imageUrl: e.target.value })}
+                  placeholder="https://… image URL"
+                  aria-label="Featured image URL"
+                  style={{ width: '100%' }}
+                />
+              )}
             </div>
           </Postbox>
 

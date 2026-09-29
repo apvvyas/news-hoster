@@ -2,6 +2,7 @@ import type { Role, User, UserInput } from '@news-hoster/sdk'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../api'
+import { useConfirm } from '../confirm-context'
 import { useAuth } from '../auth-context'
 import { Field, Modal, Notice, PageHeader, Spinner } from '../components/ui'
 import { errorMessage, formatDate } from '../lib/format'
@@ -10,6 +11,7 @@ const BLANK: UserInput = { email: '', name: '', password: '', role: 'editor' }
 
 export function UsersPage() {
   const qc = useQueryClient()
+  const confirm = useConfirm()
   const { user: me } = useAuth()
   const users = useQuery({ queryKey: ['users'], queryFn: api.users.list })
   const [editing, setEditing] = useState<{ user?: User; form: UserInput & { active: boolean } } | null>(null)
@@ -69,7 +71,17 @@ export function UsersPage() {
                       Edit
                     </button>
                     {u.id !== me?.id && (
-                      <button className="button-link danger" onClick={() => confirm(`Delete ${u.name}?`) && remove.mutate(u.id)}>
+                      <button
+                        className="button-link danger"
+                        onClick={async () =>
+                          (await confirm({
+                            title: `Delete ${u.name}?`,
+                            message: 'They can no longer log in. Revisions they made are kept without their name.',
+                            confirmLabel: 'Delete user',
+                            danger: true,
+                          })) && remove.mutate(u.id)
+                        }
+                      >
                         Delete
                       </button>
                     )}

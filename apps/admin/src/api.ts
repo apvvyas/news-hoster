@@ -20,8 +20,13 @@ export const tokenStore = {
   },
 }
 
+// Demo builds (VITE_DEMO=1) answer every API call in the browser; the module is
+// only bundled into those builds.
+const demoFetch: typeof fetch | undefined = __DEMO__ ? (input, init) => import('./demo/mock-api').then((m) => m.demoFetch(input, init)) : undefined
+
 export const api = createAdminClient({
-  baseUrl: import.meta.env.VITE_API_URL ?? '',
+  baseUrl: __DEMO__ ? '' : (import.meta.env.VITE_API_URL ?? ''),
+  fetch: demoFetch,
   getToken: () => tokenStore.get(),
   onUnauthorized: () => {
     if (tokenStore.get()) {

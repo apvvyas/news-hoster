@@ -23,7 +23,7 @@
   color: var(--text);
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); }
+body { margin: 0; background: var(--bg); font: inherit; color: var(--text); }
 a { color: var(--blue); }
 a:hover { color: var(--blue-dark); }
 h1 { font-size: 23px; font-weight: 400; margin: 0; padding: 9px 0 4px; line-height: 1.3; }
@@ -31,8 +31,8 @@ h2 { font-size: 14px; margin: 0; }
 code { background: #f6f7f7; padding: 1px 4px; font-size: 12px; }
 
 /* ---- Admin bar + menu ---------------------------------------------------- */
-.adminbar { position: fixed; top: 0; left: 0; right: 0; height: 32px; background: var(--bar); color: var(--menu-text);
-  display: flex; align-items: center; justify-content: space-between; padding: 0 12px; z-index: 50; font-size: 13px; }
+.adminbar { position: fixed; top: 0; left: 0; right: 0; height: calc(32px + env(safe-area-inset-top, 0px)); background: var(--bar); color: var(--menu-text);
+  display: flex; align-items: center; justify-content: space-between; padding: env(safe-area-inset-top, 0px) 12px 0; z-index: 50; font-size: 13px; }
 .adminbar a, .adminbar button { color: var(--menu-text); text-decoration: none; background: none; border: 0; font: inherit; cursor: pointer; }
 .adminbar a:hover, .adminbar button:hover { color: var(--menu-hover); }
 .adminbar .brand { font-weight: 600; display: flex; align-items: center; gap: 8px; }
@@ -209,3 +209,11 @@ tr:hover .row-actions, tr:focus-within .row-actions { visibility: visible; }
 
 /* Touch screens have no hover: always show row actions. */
 @media (max-width: 782px), (hover: none) { .row-actions { visibility: visible; } }
+
+.button-danger { background: #b32d2e; border-color: #b32d2e; }
+.button-danger:hover { background: #8a2424; border-color: #8a2424; }
+.two-col { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 900px) { .two-col { grid-template-columns: minmax(0, 1fr); } }
+.demo-banner { background: #1d2327; color: #f0f0f1; border-left: 4px solid #72aee6; padding: 8px 12px; margin: 0 0 12px; display: flex; gap: 12px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.demo-banner strong { color: #fff; }
+.demo-banner button { color: #72aee6; background: none; border: 1px solid #72aee6; border-radius: 3px; padding: 3px 8px; cursor: pointer; font: inherit; }

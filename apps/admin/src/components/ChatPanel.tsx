@@ -2,6 +2,7 @@ import type { ChatMessage, Language, VersionContent } from '@news-hoster/sdk'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api } from '../api'
+import { useConfirm } from '../confirm-context'
 import { errorMessage, formatDate, langName } from '../lib/format'
 import { Notice, Postbox, Spinner } from './ui'
 
@@ -81,6 +82,7 @@ interface Props {
 /** Per-version chat with the Sarvam editorial assistant. */
 export function ChatPanel({ articleId, language, current, dirty, onApplied }: Props) {
   const qc = useQueryClient()
+  const confirm = useConfirm()
   const key = ['chat', articleId, language]
   const chat = useQuery({ queryKey: key, queryFn: () => api.articles.chat(articleId, language) })
   const [text, setText] = useState('')
@@ -135,7 +137,17 @@ export function ChatPanel({ articleId, language, current, dirty, onApplied }: Pr
                   current={current}
                   applying={apply.isPending && apply.variables === m.id}
                   onApply={() => {
-                    if (!dirty || confirm('You have unsaved changes in this version. Applying the suggestion will replace them. Continue?')) apply.mutate(m.id)
+                    void (async () => {
+                      if (
+                        !dirty ||
+                        (await confirm({
+                          title: 'Replace unsaved changes?',
+                          message: 'You have unsaved changes in this version. Applying the suggestion replaces them.',
+                          confirmLabel: 'Apply suggestion',
+                        }))
+                      )
+                        apply.mutate(m.id)
+                    })()
                   }}
                 />
               )}

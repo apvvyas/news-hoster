@@ -8,8 +8,8 @@ export function LoginPage() {
   const { user, login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState(__DEMO__ ? 'admin@demo.newshoster' : '')
+  const [password, setPassword] = useState(__DEMO__ ? 'demo1234' : '')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const from = (location.state as { from?: string } | null)?.from ?? '/'
@@ -33,6 +33,13 @@ export function LoginPage() {
   return (
     <div className="login">
       <h1>📰 News Hoster</h1>
+      {__DEMO__ && (
+        <Notice type="info">
+          <p>
+            <strong>Live demo.</strong> The sign-in is filled in: <code>admin@demo.newshoster</code> / <code>demo1234</code>. Data stays in your browser.
+          </p>
+        </Notice>
+      )}
       {error && <Notice type="error">{error}</Notice>}
       <form onSubmit={submit}>
         <label htmlFor="email">Email Address</label>

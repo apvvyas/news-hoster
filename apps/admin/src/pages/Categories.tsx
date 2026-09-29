@@ -2,6 +2,7 @@ import { LANGUAGES, type Category, type CategoryInput } from '@news-hoster/sdk'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../api'
+import { useConfirm } from '../confirm-context'
 import { Field, Notice, PageHeader, Postbox, Spinner } from '../components/ui'
 import { errorMessage, langName } from '../lib/format'
 
@@ -9,6 +10,7 @@ const BLANK: CategoryInput = { slug: '', names: { en: '' }, sortOrder: 0 }
 
 export function CategoriesPage() {
   const qc = useQueryClient()
+  const confirm = useConfirm()
   const list = useQuery({ queryKey: ['categories'], queryFn: api.categories.list })
   const [form, setForm] = useState<CategoryInput>(BLANK)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -44,7 +46,7 @@ export function CategoriesPage() {
         </Notice>
       )}
       {remove.error && <Notice type="error">{errorMessage(remove.error)}</Notice>}
-      <div className="post-body" style={{ gridTemplateColumns: '340px minmax(0,1fr)' }}>
+      <div className="two-col">
         <Postbox title={editingId ? 'Edit Category' : 'Add New Category'}>
           {save.error && <Notice type="error">{errorMessage(save.error)}</Notice>}
           {LANGUAGES.map((l) => (
@@ -118,7 +120,17 @@ export function CategoriesPage() {
                       <button className="button-link" onClick={() => startEdit(c)}>
                         Edit
                       </button>
-                      <button className="button-link danger" onClick={() => confirm(`Delete “${c.names.en}”?`) && remove.mutate(c.id)}>
+                      <button
+                        className="button-link danger"
+                        onClick={async () =>
+                          (await confirm({
+                            title: `Delete “${c.names.en}”?`,
+                            message: 'Its articles become uncategorised.',
+                            confirmLabel: 'Delete category',
+                            danger: true,
+                          })) && remove.mutate(c.id)
+                        }
+                      >
                         Delete
                       </button>
                     </div>

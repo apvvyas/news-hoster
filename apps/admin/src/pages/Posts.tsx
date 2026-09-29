@@ -3,6 +3,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { api } from '../api'
+import { useConfirm } from '../confirm-context'
 import { Notice, PageHeader, Pagination, Spinner, StatusLinks } from '../components/ui'
 import { errorMessage, formatDate, headlineOf } from '../lib/format'
 import { analyzeSeo } from '../lib/seo'
@@ -17,6 +18,7 @@ function seoScore(a: Article) {
 
 export function PostsPage() {
   const qc = useQueryClient()
+  const confirm = useConfirm()
   const [params, setParams] = useSearchParams()
   const status = (params.get('status') === 'publish' ? 'published' : params.get('status')) as Filter | null
   const filter: Filter = status ?? 'all'
@@ -83,11 +85,19 @@ export function PostsPage() {
   const items = list.data?.items ?? []
   const allChecked = items.length > 0 && items.every((a) => selected.has(a.id))
 
-  const applyBulk = () => {
+  const applyBulk = async () => {
     const ids = [...selected]
     if (!ids.length || !bulk) return
     if (bulk === 'delete') {
-      if (confirm(`Permanently delete ${ids.length} post(s)? This cannot be undone.`)) destroy.mutate(ids)
+      if (
+        await confirm({
+          title: `Delete ${ids.length} post(s) permanently?`,
+          message: 'This cannot be undone.',
+          confirmLabel: 'Delete permanently',
+          danger: true,
+        })
+      )
+        destroy.mutate(ids)
     } else setStatus.mutate({ ids, status: bulk as ArticleStatus })
   }
 
@@ -226,7 +236,17 @@ export function PostsPage() {
                         <button className="button-link" onClick={() => setStatus.mutate({ ids: [a.id], status: 'draft' })}>
                           Restore
                         </button>
-                        <button className="button-link danger" onClick={() => confirm('Delete permanently?') && destroy.mutate([a.id])}>
+                        <button
+                          className="button-link danger"
+                          onClick={async () =>
+                            (await confirm({
+                              title: 'Delete this post permanently?',
+                              message: 'This cannot be undone.',
+                              confirmLabel: 'Delete permanently',
+                              danger: true,
+                            })) && destroy.mutate([a.id])
+                          }
+                        >
                           Delete Permanently
                         </button>
                       </>

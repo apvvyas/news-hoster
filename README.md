@@ -106,6 +106,12 @@ read-only and serves only published content.
 
 Full reference: Swagger UI at `/api/docs`.
 
+### Live demo build
+
+`npm run build:demo -w apps/admin` builds the admin into `apps/admin/dist-demo` with an
+in-browser sample API (fictional bilingual stories, simulated Sarvam replies, data kept in
+the viewer's browser). It needs no server and is useful for showing the admin to people.
+
 ## Development
 
 ```bash

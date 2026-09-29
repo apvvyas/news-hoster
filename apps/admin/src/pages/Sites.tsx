@@ -2,6 +2,7 @@ import { LANGUAGES, type Language, type Site, type SiteInput, type SiteWithKey }
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../api'
+import { useConfirm } from '../confirm-context'
 import { Field, Modal, Notice, PageHeader, Spinner } from '../components/ui'
 import { errorMessage, langName } from '../lib/format'
 
@@ -21,12 +22,18 @@ function KeyBox({ result, onClose }: { result: SiteWithKey; onClose: () => void 
     >
       <div className="keybox">
         <strong>Copy this key now — it will not be shown again.</strong>
-        <code>{result.apiKey}</code>
+        <code id="api-key-value">{result.apiKey}</code>
         <button
           className="button"
           onClick={async () => {
-            await navigator.clipboard.writeText(result.apiKey)
-            setCopied(true)
+            try {
+              await navigator.clipboard.writeText(result.apiKey)
+              setCopied(true)
+            } catch {
+              // Clipboard blocked: select the key so it can be copied by hand.
+              const code = document.getElementById('api-key-value')
+              if (code) window.getSelection()?.selectAllChildren(code)
+            }
           }}
         >
           {copied ? 'Copied ✓' : 'Copy to clipboard'}
@@ -46,6 +53,7 @@ const { items } = await news.articles({ limit: 10 })`}</pre>
 
 export function SitesPage() {
   const qc = useQueryClient()
+  const confirm = useConfirm()
   const sites = useQuery({ queryKey: ['sites'], queryFn: api.sites.list })
   const categories = useQuery({ queryKey: ['categories'], queryFn: api.categories.list })
   const [editing, setEditing] = useState<{ id?: string; form: SiteInput } | null>(null)
@@ -134,11 +142,27 @@ export function SitesPage() {
                     </button>
                     <button
                       className="button-link"
-                      onClick={() => confirm('Generate a new key? The old key stops working immediately.') && rotate.mutate(s.id)}
+                      onClick={async () =>
+                        (await confirm({
+                          title: 'Generate a new API key?',
+                          message: 'The current key stops working immediately. Update the website with the new key.',
+                          confirmLabel: 'Generate new key',
+                        })) && rotate.mutate(s.id)
+                      }
                     >
                       New API key
                     </button>
-                    <button className="button-link danger" onClick={() => confirm(`Delete “${s.name}”? Its key stops working.`) && remove.mutate(s.id)}>
+                    <button
+                      className="button-link danger"
+                      onClick={async () =>
+                        (await confirm({
+                          title: `Delete “${s.name}”?`,
+                          message: 'Its API key stops working and the website can no longer load news.',
+                          confirmLabel: 'Delete site',
+                          danger: true,
+                        })) && remove.mutate(s.id)
+                      }
+                    >
                       Delete
                     </button>
                   </div>
