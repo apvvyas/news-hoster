@@ -24,16 +24,26 @@ const input: RestructureInput = {
   targetLanguages: ['en', 'hi'],
 };
 
+/** Streams `content` in small chunks, like the real API does. */
+async function* streamOf(content: string, finish_reason = 'stop') {
+  for (let i = 0; i < content.length; i += 7) {
+    yield {
+      model: 'sarvam-105b',
+      choices: [
+        { delta: { content: content.slice(i, i + 7) }, finish_reason: null },
+      ],
+    };
+  }
+  yield { model: 'sarvam-105b', choices: [{ delta: {}, finish_reason }] };
+}
+
 function clientReturning(content: string, finish_reason = 'stop') {
   const calls: unknown[] = [];
   const client = {
     chat: {
       completions: async (req: unknown) => {
         calls.push(req);
-        return {
-          model: 'sarvam-105b',
-          choices: [{ finish_reason, message: { role: 'assistant', content } }],
-        };
+        return streamOf(content, finish_reason);
       },
     },
   } as unknown as SarvamChatClient;
@@ -67,6 +77,10 @@ describe('SarvamRestructurer', () => {
 
     const req = calls[0] as any;
     expect(req.model).toBe('sarvam-105b');
+    expect(req.stream).toBe(true);
+    // Reasoning is explicitly disabled (null, not omitted) so it can't eat the token budget.
+    expect(req).toHaveProperty('reasoning_effort', null);
+    expect(req.max_tokens).toBe(8000);
     expect(req.response_format.type).toBe('json_schema');
     expect(req.response_format.json_schema.strict).toBe(true);
     expect(
@@ -89,6 +103,18 @@ describe('SarvamRestructurer', () => {
     );
   });
 
+  it('passes a configured reasoning level through', async () => {
+    const { client, calls } = clientReturning(JSON.stringify(good));
+    await new SarvamRestructurer(client, 'm', {
+      reasoning: 'low',
+      maxTokens: 12000,
+    }).restructure(input);
+    expect(calls[0]).toMatchObject({
+      reasoning_effort: 'low',
+      max_tokens: 12000,
+    });
+  });
+
   it('falls back to the category hint for unknown categories', async () => {
     const { client } = clientReturning(
       JSON.stringify({ ...good, category: 'nope' }),
@@ -102,10 +128,10 @@ describe('SarvamRestructurer', () => {
   it('rejects truncated output and missing languages', async () => {
     await expect(
       new SarvamRestructurer(
-        clientReturning('{}', 'length').client,
+        clientReturning('{"category": "spo', 'length').client,
         'm',
       ).restructure(input),
-    ).rejects.toThrow(/truncated/);
+    ).rejects.toThrow(/unusable output \(output hit max_tokens\)/);
     const missingHi = { ...good, versions: { en: good.versions.en } };
     await expect(
       new SarvamRestructurer(

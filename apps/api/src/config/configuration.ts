@@ -1,3 +1,5 @@
+import type { SarvamReasoning } from '../sarvam/sarvam.common.js';
+
 export interface AppConfig {
   port: number;
   databaseUrl: string;
@@ -6,7 +8,13 @@ export interface AppConfig {
   jwtExpiresIn: string;
   corsOrigins: string[] | true;
   admin: { email?: string; password?: string };
-  sarvam: { apiKey?: string; model: string; baseUrl?: string };
+  sarvam: {
+    apiKey?: string;
+    model: string;
+    baseUrl?: string;
+    reasoning: SarvamReasoning;
+    maxTokens: number;
+  };
   pipelineIntervalMinutes: number;
 }
 
@@ -36,10 +44,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     sarvam: {
       apiKey: env.SARVAM_API_KEY || undefined,
       model: env.SARVAM_MODEL ?? 'sarvam-105b',
+      reasoning: parseReasoning(env.SARVAM_REASONING),
+      maxTokens: Number(env.SARVAM_MAX_TOKENS ?? 8000),
       baseUrl: env.SARVAM_BASE_URL || undefined,
     },
     pipelineIntervalMinutes: Number(env.PIPELINE_INTERVAL_MINUTES ?? 10),
   };
+}
+
+function parseReasoning(value: string | undefined): SarvamReasoning {
+  const v = (value ?? 'none').toLowerCase();
+  if (v === 'none' || v === 'low' || v === 'medium' || v === 'high') return v;
+  throw new Error(
+    `SARVAM_REASONING must be none, low, medium or high (got "${value}")`,
+  );
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');

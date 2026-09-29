@@ -1,7 +1,9 @@
 import {
+  BadGatewayException,
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -20,6 +22,8 @@ import { RevisionsService } from './revisions.service.js';
 
 @Injectable()
 export class EditorialChatService {
+  private readonly log = new Logger(EditorialChatService.name);
+
   constructor(
     @InjectRepository(ArticleChatMessage)
     private readonly messages: Repository<ArticleChatMessage>,
@@ -88,7 +92,14 @@ export class EditorialChatService {
         err instanceof FatalRestructureError
       )
         throw new ServiceUnavailableException(err.message);
-      throw err;
+      // Anything else (unusable output, invalid JSON, a rejected request) is the
+      // model's failure, not ours: report it clearly instead of a bare 500.
+      this.log.warn(
+        `Editorial assistant failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw new BadGatewayException(
+        'Sarvam could not produce a suggestion this time. Please try again.',
+      );
     }
     const reply = await this.messages.save(
       this.messages.create({

@@ -35,6 +35,10 @@ import { RevisionsService } from './revisions.service.js';
               config.sarvam.apiKey,
               config.sarvam.model,
               config.sarvam.baseUrl,
+              {
+                reasoning: config.sarvam.reasoning,
+                maxTokens: config.sarvam.maxTokens,
+              },
             )
           : null,
     },

@@ -283,6 +283,10 @@ export function defaultRestructurerFactory(
         config.sarvam.apiKey,
         config.sarvam.model,
         config.sarvam.baseUrl,
+        {
+          reasoning: config.sarvam.reasoning,
+          maxTokens: config.sarvam.maxTokens,
+        },
       );
     }
     return new ExtractiveRestructurer();

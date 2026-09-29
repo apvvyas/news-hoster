@@ -1,7 +1,10 @@
 import { LANGUAGE_NAMES, type Language } from '../common/languages.js';
 import {
-  classifySarvamError,
   createSarvamClient,
+  DEFAULT_SARVAM_OPTIONS,
+  sarvamLimits,
+  streamJsonCompletion,
+  type SarvamOptions,
   parseJson,
   SEO_RULES,
   VERSION_SCHEMA,
@@ -70,12 +73,19 @@ export class SarvamEditorAssistant implements EditorAssistant {
   constructor(
     private readonly client: SarvamChatClient,
     private readonly model: string,
+    private readonly options: SarvamOptions = DEFAULT_SARVAM_OPTIONS,
   ) {}
 
-  static create(apiKey: string, model: string, baseUrl?: string) {
+  static create(
+    apiKey: string,
+    model: string,
+    baseUrl?: string,
+    options?: SarvamOptions,
+  ) {
     return new SarvamEditorAssistant(
       createSarvamClient(apiKey, baseUrl),
       model,
+      options,
     );
   }
 
@@ -105,38 +115,28 @@ export class SarvamEditorAssistant implements EditorAssistant {
   }
 
   async suggest(input: SuggestInput): Promise<Suggestion> {
-    let response;
-    try {
-      response = await this.client.chat.completions({
-        model: this.model as 'sarvam-105b',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: this.context(input) },
-          {
-            role: 'assistant',
-            content: 'Understood. What would you like to change?',
-          },
-          ...input.history
-            .slice(-10)
-            .map((t) => ({ role: t.role, content: t.content })),
-          { role: 'user', content: input.instruction },
-        ],
-        temperature: 0.4,
-        reasoning_effort: 'medium',
-        max_tokens: 6000,
-        response_format: {
-          type: 'json_schema',
-          json_schema: { name: 'editor_reply', schema: SCHEMA, strict: true },
+    const { text } = await streamJsonCompletion(this.client, {
+      model: this.model as 'sarvam-105b',
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: this.context(input) },
+        {
+          role: 'assistant',
+          content: 'Understood. What would you like to change?',
         },
-      });
-    } catch (err) {
-      throw classifySarvamError(err);
-    }
-    const choice = response.choices[0];
-    if (!choice) throw new Error('Sarvam returned no choices');
-    if (choice.finish_reason === 'length')
-      throw new Error('Sarvam response was truncated (max_tokens)');
-    const out = parseJson(choice.message.content ?? '') as Output;
+        ...input.history
+          .slice(-10)
+          .map((t) => ({ role: t.role, content: t.content })),
+        { role: 'user', content: input.instruction },
+      ],
+      temperature: 0.4,
+      ...sarvamLimits(this.options),
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'editor_reply', schema: SCHEMA, strict: true },
+      },
+    });
+    const out = parseJson(text) as Output;
     const p = out.proposal;
     return {
       reply: (out.reply ?? '').trim() || 'Done.',

@@ -1,7 +1,10 @@
 import { LANGUAGE_NAMES, type Language } from '../common/languages.js';
 import {
-  classifySarvamError,
   createSarvamClient,
+  DEFAULT_SARVAM_OPTIONS,
+  sarvamLimits,
+  streamJsonCompletion,
+  type SarvamOptions,
   parseJson,
   SEO_RULES,
   VERSION_SCHEMA,
@@ -47,14 +50,20 @@ export class SarvamRestructurer implements Restructurer {
   constructor(
     private readonly client: SarvamChatClient,
     private readonly model: string,
+    private readonly options: SarvamOptions = DEFAULT_SARVAM_OPTIONS,
   ) {}
 
   static create(
     apiKey: string,
     model: string,
     baseUrl?: string,
+    options?: SarvamOptions,
   ): SarvamRestructurer {
-    return new SarvamRestructurer(createSarvamClient(apiKey, baseUrl), model);
+    return new SarvamRestructurer(
+      createSarvamClient(apiKey, baseUrl),
+      model,
+      options,
+    );
   }
 
   schema(input: RestructureInput): Record<string, unknown> {
@@ -99,41 +108,25 @@ export class SarvamRestructurer implements Restructurer {
   }
 
   async restructure(input: RestructureInput): Promise<RestructureResult> {
-    let response;
-    try {
-      response = await this.client.chat.completions({
-        model: this.model as 'sarvam-105b',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: this.userMessage(input) },
-        ],
-        temperature: 0.3,
-        reasoning_effort: 'low',
-        max_tokens: 5000,
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'restructured_story',
-            schema: this.schema(input),
-            strict: true,
-          },
+    const { text, model } = await streamJsonCompletion(this.client, {
+      model: this.model as 'sarvam-105b',
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: this.userMessage(input) },
+      ],
+      temperature: 0.3,
+      ...sarvamLimits(this.options),
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'restructured_story',
+          schema: this.schema(input),
+          strict: true,
         },
-      });
-    } catch (err) {
-      throw classifySarvamError(err);
-    }
-
-    const choice = response.choices[0];
-    if (!choice) throw new Error('Sarvam returned no choices');
-    if (choice.finish_reason === 'length')
-      throw new Error('Sarvam response was truncated (max_tokens)');
-    if (choice.finish_reason === 'content_filter' || choice.message.refusal) {
-      throw new Error(
-        `Sarvam declined: ${choice.message.refusal ?? 'content_filter'}`,
-      );
-    }
-    const data = parseJson(choice.message.content ?? '') as SarvamOutput;
-    return this.toResult(data, input, response.model);
+      },
+    });
+    const data = parseJson(text) as SarvamOutput;
+    return this.toResult(data, input, model);
   }
 
   toResult(
