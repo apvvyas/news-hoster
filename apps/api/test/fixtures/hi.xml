@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>हिंदी समाचार</title><link>https://hindi.example/</link><description>Hindi test feed</description>
+  <item>
+    <title>दिल्ली में भारी बारिश से यातायात प्रभावित</title>
+    <link>https://hindi.example/delhi-rain</link>
+    <pubDate>Mon, 28 Sep 2026 12:00:00 GMT</pubDate>
+    <description><![CDATA[<p>राजधानी दिल्ली में सोमवार को भारी बारिश हुई। कई इलाकों में जलभराव से यातायात धीमा रहा। मौसम विभाग ने अगले दो दिन के लिए चेतावनी जारी की है।</p>]]></description>
+  </item>
+</channel></rss>
