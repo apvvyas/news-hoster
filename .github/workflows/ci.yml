@@ -6,12 +6,58 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  build-and-test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: news
+          POSTGRES_PASSWORD: news
+          POSTGRES_DB: news_hoster_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U news"
+          --health-interval 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://news:news@localhost:5432/news_hoster_test
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
-      - run: pip install -e '.[dev]'
-      - run: pytest -q
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: SDK
+        run: npm run build -w packages/sdk
+
+      - name: API — typecheck, lint, format
+        working-directory: apps/api
+        run: |
+          npx tsc --noEmit
+          npx oxlint --deny-warnings src test
+          npx prettier --check "src/**/*.ts" "test/**/*.ts"
+      - name: API — unit tests
+        run: npm test -w apps/api
+      - name: API — e2e tests (PostgreSQL)
+        run: npm run test:e2e -w apps/api
+      - name: API — build
+        run: npm run build -w apps/api
+      - name: API — migrations match entities
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgres://news:news@localhost:5432/news_hoster_test
+        run: |
+          npx typeorm -d dist/database/data-source.js migration:run
+          npx typeorm -d dist/database/data-source.js migration:generate src/database/migrations/Check --check
+
+      - name: Admin — typecheck, lint, build
+        working-directory: apps/admin
+        run: |
+          npx tsc -b
+          npx oxlint --deny-warnings src
+          npx prettier --check "src/**/*.{ts,tsx}"
+          npx vite build
