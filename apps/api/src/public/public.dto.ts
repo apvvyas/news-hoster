@@ -40,6 +40,23 @@ export class PublicSource {
   @ApiProperty({ nullable: true, type: String }) url: string | null;
 }
 
+export class PublicSeo {
+  @ApiProperty({ description: 'Use for <title>' }) title: string;
+  @ApiProperty({ description: 'Use for <meta name="description">' })
+  description: string;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'Override for <link rel="canonical">; null = your own article URL',
+  })
+  canonicalUrl: string | null;
+  @ApiProperty({
+    description: 'Emit <meta name="robots" content="noindex"> when true',
+  })
+  noindex: boolean;
+}
+
 export class PublicArticle {
   @ApiProperty() id: string;
   @ApiProperty() slug: string;
@@ -54,9 +71,16 @@ export class PublicArticle {
   @ApiProperty({ nullable: true, type: String }) imageUrl: string | null;
   @ApiProperty({ type: PublicSource }) source: PublicSource;
   @ApiProperty() publishedAt: Date;
+  @ApiProperty() updatedAt: Date;
+  @ApiProperty({ type: PublicSeo }) seo: PublicSeo;
 }
 
 export class PublicArticleDetail extends PublicArticle {
+  @ApiProperty({
+    description:
+      'Optional longer write-up; paragraphs separated by blank lines',
+  })
+  body: string;
   @ApiProperty({ type: [PublicArticle] }) related: PublicArticle[];
 }
 
@@ -75,4 +99,10 @@ export class PublicSiteInfo {
   @ApiProperty({ enum: LANGUAGES }) defaultLanguage: string;
   @ApiProperty({ enum: LANGUAGES, isArray: true }) languages: string[];
   @ApiProperty({ type: [PublicCategory] }) categories: PublicCategory[];
+}
+
+export class SitemapEntry {
+  @ApiProperty() slug: string;
+  @ApiProperty({ enum: LANGUAGES, isArray: true }) languages: string[];
+  @ApiProperty() updatedAt: Date;
 }

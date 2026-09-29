@@ -22,6 +22,7 @@ import {
   PublicArticlesQuery,
   PublicCategory,
   PublicSiteInfo,
+  SitemapEntry,
 } from './public.dto.js';
 import { PublicService } from './public.service.js';
 import { SITE_KEY_HEADER, SiteKeyGuard } from './site-key.guard.js';
@@ -83,5 +84,15 @@ export class PublicController {
     @Query() q: LangQuery,
   ): Promise<PublicArticleDetail> {
     return this.svc.detail(req.site, slug, q.lang);
+  }
+
+  @Get('sitemap')
+  @Header('Cache-Control', 'public, max-age=600')
+  @ApiOkResponse({ type: [SitemapEntry] })
+  sitemap(
+    @Req() req: SiteRequest,
+    @Query() q: LangQuery,
+  ): Promise<SitemapEntry[]> {
+    return this.svc.sitemap(req.site, q.lang);
   }
 }

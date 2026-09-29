@@ -15,6 +15,7 @@ import type {
   PublicArticlesQuery,
   PublicCategory,
   PublicSiteInfo,
+  SitemapEntry,
 } from './public.dto.js';
 
 @Injectable()
@@ -76,6 +77,13 @@ export class PublicService {
       imageUrl: a.imageUrl,
       source: { name: a.sourceName, url: a.sourceUrl },
       publishedAt: a.publishedAt,
+      updatedAt: a.updatedAt,
+      seo: {
+        title: t.seoTitle || t.headline,
+        description: t.metaDescription || t.summary,
+        canonicalUrl: a.canonicalUrl,
+        noindex: a.noindex,
+      },
     };
   }
 
@@ -142,7 +150,14 @@ export class PublicService {
       .select(['a.id'])
       .getOne();
     if (!hit) throw new NotFoundException('Article not found');
-    const [article] = await this.load([hit.id], lang);
+    const full = await this.articles.findOneByOrFail({ id: hit.id });
+    const article = {
+      ...this.present(full, lang),
+      body: (
+        full.translations.find((t) => t.language === lang) ??
+        full.translations[0]
+      ).body,
+    };
     let related: PublicArticle[] = [];
     if (article.category) {
       const rel = await this.visible(site, lang)
@@ -160,6 +175,25 @@ export class PublicService {
       );
     }
     return { ...article, related };
+  }
+
+  /** Everything indexable on this site, for the site's sitemap.xml. */
+  async sitemap(site: Site, langParam?: string): Promise<SitemapEntry[]> {
+    const lang = this.resolveLang(site, langParam);
+    const rows = await this.visible(site, lang)
+      .andWhere('a.noindex = false')
+      .leftJoinAndSelect('a.translations', 'tr')
+      .orderBy('a.publishedAt', 'DESC')
+      .take(5000)
+      .getMany();
+    return rows.map((a) => ({
+      slug: a.slug,
+      languages: a.translations
+        .map((t) => t.language)
+        .filter((l) => site.languages.includes(l))
+        .sort(),
+      updatedAt: a.updatedAt,
+    }));
   }
 
   private async load(ids: string[], lang: string): Promise<PublicArticle[]> {

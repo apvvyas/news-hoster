@@ -1,4 +1,6 @@
 import { Article, ArticleTranslation } from '../articles/article.entity.js';
+import { ArticleChatMessage } from '../articles/chat-message.entity.js';
+import { ArticleRevision } from '../articles/revision.entity.js';
 import { Category } from '../categories/category.entity.js';
 import { FeedItem } from '../feeds/feed-item.entity.js';
 import { Feed } from '../feeds/feed.entity.js';
@@ -13,6 +15,8 @@ export const ENTITIES = [
   FeedItem,
   Article,
   ArticleTranslation,
+  ArticleRevision,
+  ArticleChatMessage,
   Site,
   Settings,
 ];

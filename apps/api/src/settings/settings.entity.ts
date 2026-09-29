@@ -24,7 +24,7 @@ export class Settings {
   engine: RestructureEngine;
 
   /** Every article is produced in each of these languages. */
-  @Column({ type: 'jsonb', default: () => `'["en","hi"]'` })
+  @Column({ type: 'jsonb', default: () => `'["en", "hi"]'` })
   targetLanguages: string[];
 
   /** Max stories restructured per pipeline run. */

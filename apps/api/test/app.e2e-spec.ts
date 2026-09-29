@@ -16,6 +16,11 @@ import type {
   Restructurer,
 } from '../src/pipeline/restructurer.js';
 import { RestructureEngine } from '../src/settings/settings.entity.js';
+import {
+  EDITOR_ASSISTANT,
+  type EditorAssistant,
+  type SuggestInput,
+} from '../src/articles/editor-assistant.js';
 
 const TEST_DB =
   process.env.TEST_DATABASE_URL ??
@@ -41,7 +46,28 @@ class FakeSarvam implements Restructurer {
           language === 'hi' ? `हिंदी: ${input.title}` : `EN: ${input.title}`,
         summary: `${language} summary`,
         keyPoints: [`${language} point`],
+        seoTitle: `${language} seo title`,
+        metaDescription: `${language} meta description`,
+        focusKeyword: `${language} keyword`,
       })),
+    };
+  }
+}
+
+/** Stands in for the Sarvam editorial assistant. */
+class FakeAssistant implements EditorAssistant {
+  calls: SuggestInput[] = [];
+  async suggest(input: SuggestInput) {
+    this.calls.push(input);
+    if (input.instruction.startsWith('?'))
+      return { reply: 'Just answering.', proposal: null };
+    return {
+      reply: 'Shortened the headline.',
+      proposal: {
+        ...input.current,
+        headline: `${input.current.headline} (short)`,
+        seoTitle: 'Better SEO title',
+      },
     };
   }
 }
@@ -53,6 +79,7 @@ describe('News Hoster API (e2e)', () => {
   let feedBase: string;
   let token: string;
   const fake = new FakeSarvam();
+  const assistant = new FakeAssistant();
   const feedHits: Record<string, number> = {};
 
   const auth = () => ({ authorization: `Bearer ${token}` });
@@ -101,6 +128,8 @@ describe('News Hoster API (e2e)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(RESTRUCTURER_FACTORY)
       .useValue(factory)
+      .overrideProvider(EDITOR_ASSISTANT)
+      .useValue(assistant)
       .compile();
     app = moduleRef.createNestApplication();
     setupApp(app, loadConfig());
@@ -343,6 +372,262 @@ describe('News Hoster API (e2e)', () => {
     });
   });
 
+  describe('editorial workflow (WordPress-style)', () => {
+    let article: any;
+
+    beforeAll(async () => {
+      const list = (
+        await http.get('/api/admin/articles').set(auth()).expect(200)
+      ).body;
+      article = list.items.find(
+        (a: any) => a.slug === 'en-local-team-wins-championship',
+      );
+    });
+
+    it('keeps SEO fields from the restructurer', () => {
+      const en = article.translations.find((t: any) => t.language === 'en');
+      expect(en).toMatchObject({
+        seoTitle: 'en seo title',
+        metaDescription: 'en meta description',
+        focusKeyword: 'en keyword',
+        body: '',
+      });
+    });
+
+    it('records a revision per language when the pipeline creates an article', async () => {
+      const revs = (
+        await http
+          .get(`/api/admin/articles/${article.id}/revisions`)
+          .set(auth())
+          .expect(200)
+      ).body;
+      expect(revs.map((r: any) => [r.language, r.note, r.author])).toEqual(
+        expect.arrayContaining([
+          ['en', 'Created by sarvam:fake', null],
+          ['hi', 'Created by sarvam:fake', null],
+        ]),
+      );
+    });
+
+    it('records a revision for edits and can restore an older one', async () => {
+      const { id: _id, ...en } = article.translations.find(
+        (t: any) => t.language === 'en',
+      );
+      await http
+        .patch(`/api/admin/articles/${article.id}`)
+        .set(auth())
+        .send({
+          slug: 'otters-win',
+          noindex: false,
+          translations: [
+            {
+              ...en,
+              headline: 'Edited headline',
+              body: 'Para one.\n\nPara two.',
+            },
+          ],
+        })
+        .expect(200);
+      // Saving the same content again is not a new revision.
+      await http
+        .patch(`/api/admin/articles/${article.id}`)
+        .set(auth())
+        .send({
+          translations: [
+            {
+              ...en,
+              headline: 'Edited headline',
+              body: 'Para one.\n\nPara two.',
+            },
+          ],
+        })
+        .expect(200);
+
+      const revs = (
+        await http
+          .get(`/api/admin/articles/${article.id}/revisions`)
+          .set(auth())
+          .query({ language: 'en' })
+          .expect(200)
+      ).body;
+      expect(revs.map((r: any) => r.note)).toEqual([
+        'Edited',
+        'Created by sarvam:fake',
+      ]);
+      expect(revs[0].author.email).toBe(ADMIN.email);
+      expect(revs[0].content.headline).toBe('Edited headline');
+
+      const restored = (
+        await http
+          .post(
+            `/api/admin/articles/${article.id}/revisions/${revs[1].id}/restore`,
+          )
+          .set(auth())
+          .expect(200)
+      ).body;
+      expect(restored.slug).toBe('otters-win');
+      expect(
+        restored.translations.find((t: any) => t.language === 'en').headline,
+      ).toBe('EN: Local team wins championship');
+      const after = (
+        await http
+          .get(`/api/admin/articles/${article.id}/revisions`)
+          .set(auth())
+          .query({ language: 'en' })
+          .expect(200)
+      ).body;
+      expect(after[0].note).toMatch(/^Restored revision/);
+    });
+
+    it('rejects a slug that is taken', async () => {
+      const other = (
+        await http.get('/api/admin/articles').set(auth())
+      ).body.items.find((a: any) => a.id !== article.id);
+      await http
+        .patch(`/api/admin/articles/${other.id}`)
+        .set(auth())
+        .send({ slug: 'otters-win' })
+        .expect(409);
+    });
+
+    it('chats with the assistant about one language version and applies its proposal', async () => {
+      const empty = (
+        await http
+          .get(`/api/admin/articles/${article.id}/chat`)
+          .set(auth())
+          .query({ language: 'hi' })
+          .expect(200)
+      ).body;
+      expect(empty).toEqual({ available: true, messages: [] });
+
+      const [mine, reply] = (
+        await http
+          .post(`/api/admin/articles/${article.id}/chat`)
+          .set(auth())
+          .send({ language: 'hi', message: 'Make the headline shorter' })
+          .expect(200)
+      ).body;
+      expect(mine).toMatchObject({
+        role: 'user',
+        content: 'Make the headline shorter',
+        language: 'hi',
+      });
+      expect(reply).toMatchObject({
+        role: 'assistant',
+        content: 'Shortened the headline.',
+        appliedRevisionId: null,
+      });
+      expect(reply.proposal.headline).toBe(
+        'हिंदी: Local team wins championship (short)',
+      );
+      expect(assistant.calls[0]).toMatchObject({
+        language: 'hi',
+        source: { title: 'Local team wins championship', name: 'Wire' },
+      });
+
+      await http
+        .post(`/api/admin/articles/${article.id}/chat`)
+        .set(auth())
+        .send({ language: 'hi', message: '? why' })
+        .expect(200);
+      expect(assistant.calls[1].history.map((h) => h.role)).toEqual([
+        'user',
+        'assistant',
+      ]);
+
+      const applied = (
+        await http
+          .post(`/api/admin/articles/${article.id}/chat/${reply.id}/apply`)
+          .set(auth())
+          .expect(200)
+      ).body;
+      expect(applied.appliedRevisionId).toBeTruthy();
+      await http
+        .post(`/api/admin/articles/${article.id}/chat/${reply.id}/apply`)
+        .set(auth())
+        .expect(409);
+
+      const updated = (
+        await http
+          .get(`/api/admin/articles/${article.id}`)
+          .set(auth())
+          .expect(200)
+      ).body;
+      const hi = updated.translations.find((t: any) => t.language === 'hi');
+      expect(hi).toMatchObject({
+        headline: 'हिंदी: Local team wins championship (short)',
+        seoTitle: 'Better SEO title',
+      });
+      const revs = (
+        await http
+          .get(`/api/admin/articles/${article.id}/revisions`)
+          .set(auth())
+          .query({ language: 'hi' })
+          .expect(200)
+      ).body;
+      expect(revs[0].note).toBe('Applied assistant suggestion');
+
+      const history = (
+        await http
+          .get(`/api/admin/articles/${article.id}/chat`)
+          .set(auth())
+          .query({ language: 'hi' })
+          .expect(200)
+      ).body;
+      expect(history.messages).toHaveLength(4);
+      const enChat = (
+        await http
+          .get(`/api/admin/articles/${article.id}/chat`)
+          .set(auth())
+          .query({ language: 'en' })
+          .expect(200)
+      ).body;
+      expect(enChat.messages).toHaveLength(0);
+    });
+
+    it('moves articles to the trash before permanent deletion', async () => {
+      const list = (await http.get('/api/admin/articles').set(auth())).body;
+      const victim = list.items.find((a: any) => a.id !== article.id);
+      await http
+        .delete(`/api/admin/articles/${victim.id}`)
+        .set(auth())
+        .expect(409);
+      await http
+        .post('/api/admin/articles/bulk-status')
+        .set(auth())
+        .send({ ids: [victim.id], status: 'trash' })
+        .expect(200);
+
+      const counts = (
+        await http.get('/api/admin/articles/counts').set(auth()).expect(200)
+      ).body;
+      expect(counts).toMatchObject({
+        all: 2,
+        draft: 2,
+        trash: 1,
+        published: 0,
+      });
+      expect(
+        (await http.get('/api/admin/articles').set(auth())).body.total,
+      ).toBe(2);
+      expect(
+        (
+          await http
+            .get('/api/admin/articles')
+            .set(auth())
+            .query({ status: 'trash' })
+        ).body.total,
+      ).toBe(1);
+
+      // Restore it (trash -> draft); the public tests below need all three.
+      await http
+        .patch(`/api/admin/articles/${victim.id}`)
+        .set(auth())
+        .send({ status: 'draft' })
+        .expect(200);
+    });
+  });
+
   describe('public API for websites', () => {
     let hindiKey: string;
     let englishKey: string;
@@ -459,7 +744,7 @@ describe('News Hoster API (e2e)', () => {
       expect(hi.total).toBe(1);
       expect(hi.items[0]).toMatchObject({
         language: 'hi',
-        headline: 'हिंदी: Local team wins championship',
+        headline: 'हिंदी: Local team wins championship (short)',
         category: { slug: 'sports', name: 'खेल' },
       });
       expect(hi.items[0].source).toEqual({
@@ -475,6 +760,10 @@ describe('News Hoster API (e2e)', () => {
           .expect(200)
       ).body;
       expect(en.items[0].headline).toBe('EN: Local team wins championship');
+      expect(en.items[0].seo).toMatchObject({
+        title: 'en seo title',
+        description: 'en meta description',
+      });
 
       const all = (
         await http
@@ -523,7 +812,7 @@ describe('News Hoster API (e2e)', () => {
     it('serves an article by slug and hides drafts', async () => {
       const detail = (
         await http
-          .get('/api/public/articles/en-local-team-wins-championship')
+          .get('/api/public/articles/otters-win')
           .set('x-api-key', hindiKey)
           .expect(200)
       ).body;
@@ -534,16 +823,14 @@ describe('News Hoster API (e2e)', () => {
       });
 
       const list = (await http.get('/api/admin/articles').set(auth())).body;
-      const otters = list.items.find(
-        (a: any) => a.slug === 'en-local-team-wins-championship',
-      );
+      const otters = list.items.find((a: any) => a.slug === 'otters-win');
       await http
         .patch(`/api/admin/articles/${otters.id}`)
         .set(auth())
         .send({ status: 'draft' })
         .expect(200);
       await http
-        .get('/api/public/articles/en-local-team-wins-championship')
+        .get('/api/public/articles/otters-win')
         .set('x-api-key', hindiKey)
         .expect(404);
     });

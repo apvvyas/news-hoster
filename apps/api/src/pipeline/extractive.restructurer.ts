@@ -15,6 +15,8 @@ export class ExtractiveRestructurer implements Restructurer {
 
   async restructure(input: RestructureInput): Promise<RestructureResult> {
     const sentences = splitSentences(input.content);
+    const summary =
+      truncate(sentences.slice(0, 2).join(' '), 400) || input.title;
     return {
       categorySlug: input.categoryHint,
       tags: [],
@@ -23,11 +25,13 @@ export class ExtractiveRestructurer implements Restructurer {
         {
           language: input.sourceLanguage,
           headline: input.title,
-          summary:
-            truncate(sentences.slice(0, 2).join(' '), 400) || input.title,
+          summary,
           keyPoints: sentences
             .slice(2, 2 + MAX_KEY_POINTS)
             .map((s) => truncate(s, 200)),
+          seoTitle: truncate(input.title, 60),
+          metaDescription: truncate(summary, 155),
+          focusKeyword: '',
         },
       ],
     };

@@ -19,6 +19,9 @@ export interface TranslatedCopy {
   headline: string;
   summary: string;
   keyPoints: string[];
+  seoTitle: string;
+  metaDescription: string;
+  focusKeyword: string;
 }
 
 export interface RestructureResult {

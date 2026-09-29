@@ -10,6 +10,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, LessThan, Repository } from 'typeorm';
 import { Article, ArticleStatus } from '../articles/article.entity.js';
 import { ArticlesService } from '../articles/articles.service.js';
+import { RevisionsService } from '../articles/revisions.service.js';
 import { Category } from '../categories/category.entity.js';
 import { APP_CONFIG, type AppConfig } from '../config/configuration.js';
 import { FeedItem, ItemStatus } from '../feeds/feed-item.entity.js';
@@ -67,6 +68,7 @@ export class PipelineService
     @InjectRepository(Category)
     private readonly categories: Repository<Category>,
     private readonly articlesService: ArticlesService,
+    private readonly revisions: RevisionsService,
     private readonly fetcher: FetcherService,
     private readonly settings: SettingsService,
     private readonly dataSource: DataSource,
@@ -220,10 +222,18 @@ export class PipelineService
             : ArticleStatus.Draft,
           engine: result.engine,
           publishedAt: item.publishedAt,
-          translations: result.translations.map((t) => ({ ...t })),
+          translations: result.translations.map((t) => ({ ...t, body: '' })),
         });
         await this.dataSource.transaction(async (m) => {
           await m.save(article);
+          for (const t of article.translations)
+            await this.revisions.snapshot(
+              article,
+              t,
+              `Created by ${result.engine}`,
+              null,
+              m,
+            );
           await m.update(FeedItem, item.id, {
             status: ItemStatus.Done,
             error: null,
